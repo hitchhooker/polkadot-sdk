@@ -21,13 +21,14 @@ rand_chacha = { workspace = true }
 scale-info = { features = ["derive"], workspace = true }
 codec = { features = ["derive"], workspace = true }
 
+pallet-democracy = { version = 37.0.0 }
+
 sp-io = { workspace = true }
 sp-arithmetic = { workspace = true }
 sp-runtime = { workspace = true }
 frame-benchmarking = { optional = true, workspace = true }
 frame-support = { workspace = true }
 frame-system = { workspace = true }
-
 [dev-dependencies]
 frame-support-test = { workspace = true }
 pallet-balances = { workspace = true, default-features = true }

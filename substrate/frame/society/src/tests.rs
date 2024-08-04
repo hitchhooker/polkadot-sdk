@@ -1321,3 +1321,148 @@ fn drop_candidate_works() {
 		assert_eq!(candidates(), vec![]);
 	});
 }
+
+#[test]
+fn propose_deposit_works() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the proposer is a member
+        let proposer = 1;
+        let referendum_index = 0;
+        Members::<Test, ()>::insert(proposer, Member { rank: 1 });
+
+        // Mock the referendum status to NeedsDeposit
+        Referenda::set_referendum_status(referendum_index, ReferendumStatus::NeedsDeposit { deposit_end: 100 });
+
+        // Propose deposit
+        assert_ok!(Society::propose_deposit(Origin::signed(proposer), referendum_index));
+
+        // Check storage updates
+        assert!(DepositVotesExpiry::<Test, ()>::contains_key(referendum_index));
+        assert_eq!(DepositTallies::<Test, ()>::get(referendum_index), Tally::default());
+    });
+}
+
+#[test]
+fn propose_deposit_fails_for_non_member() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the proposer is not a member
+        let proposer = 1;
+        let referendum_index = 0;
+
+        // Mock the referendum status to NeedsDeposit
+        Referenda::set_referendum_status(referendum_index, ReferendumStatus::NeedsDeposit { deposit_end: 100 });
+
+        // Attempt to propose deposit
+        assert_noop!(
+            Society::propose_deposit(Origin::signed(proposer), referendum_index),
+            Error::<Test>::NotMember
+        );
+    });
+}
+
+#[test]
+fn vote_for_deposit_works() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the voter is a member
+        let voter = 1;
+        let referendum_index = 0;
+        Members::<Test, ()>::insert(voter, Member { rank: 1 });
+
+        // Mock the proposal
+        DepositVotesExpiry::<Test, ()>::insert(referendum_index, 100);
+        DepositTallies::<Test, ()>::insert(referendum_index, Tally::default());
+
+        // Vote for deposit
+        assert_ok!(Society::vote_for_deposit(Origin::signed(voter), referendum_index, true));
+
+        // Check storage updates
+        assert_eq!(DepositVotes::<Test, ()>::get(referendum_index, voter), Some(Vote::Yes));
+        let tally = DepositTallies::<Test, ()>::get(referendum_index);
+        assert_eq!(tally.approve, 1);
+        assert_eq!(tally.reject, 0);
+    });
+}
+
+#[test]
+fn vote_for_deposit_fails_for_non_member() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the voter is not a member
+        let voter = 1;
+        let referendum_index = 0;
+
+        // Mock the proposal
+        DepositVotesExpiry::<Test, ()>::insert(referendum_index, 100);
+        DepositTallies::<Test, ()>::insert(referendum_index, Tally::default());
+
+        // Attempt to vote for deposit
+        assert_noop!(
+            Society::vote_for_deposit(Origin::signed(voter), referendum_index, true),
+            Error::<Test>::NotMember
+        );
+    });
+}
+
+#[test]
+fn vote_for_deposit_fails_when_no_proposal_exists() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the voter is a member
+        let voter = 1;
+        let referendum_index = 0;
+        Members::<Test, ()>::insert(voter, Member { rank: 1 });
+
+        // Attempt to vote for deposit without a proposal
+        assert_noop!(
+            Society::vote_for_deposit(Origin::signed(voter), referendum_index, true),
+            Error::<Test>::NoProposalExists
+        );
+    });
+}
+
+#[test]
+fn finalize_deposit_vote_works() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the voter is a member
+        let voter = 1;
+        let referendum_index = 0;
+        Members::<Test, ()>::insert(voter, Member { rank: 1 });
+
+        // Mock the proposal and votes
+        DepositVotesExpiry::<Test, ()>::insert(referendum_index, 100);
+        DepositTallies::<Test, ()>::insert(referendum_index, Tally { approve: 1, reject: 0 });
+        DepositVotes::<Test, ()>::insert(referendum_index, voter, Vote::Yes);
+
+        // Finalize deposit vote
+        assert_ok!(Society::finalize_deposit_vote(referendum_index));
+
+        // Check storage cleanup
+        assert!(!DepositVotesExpiry::<Test, ()>::contains_key(referendum_index));
+        assert!(!DepositVotes::<Test, ()>::contains_key(referendum_index, voter));
+        assert!(!DepositTallies::<Test, ()>::contains_key(referendum_index));
+    });
+}
+
+#[test]
+fn finalize_deposit_vote_fails_when_tally_not_passed() {
+    EnvBuilder::new().execute(|| {
+        // Ensure the voter is a member
+        let voter = 1;
+        let referendum_index = 0;
+        Members::<Test, ()>::insert(voter, Member { rank: 1 });
+
+        // Mock the proposal and votes
+        DepositVotesExpiry::<Test, ()>::insert(referendum_index, 100);
+        DepositTallies::<Test, ()>::insert(referendum_index, Tally { approve: 0, reject: 1 });
+        DepositVotes::<Test, ()>::insert(referendum_index, voter, Vote::No);
+
+        // Attempt to finalize deposit vote
+        assert_noop!(
+            Society::finalize_deposit_vote(referendum_index),
+            Error::<Test>::DepositVoteNotPassed
+        );
+
+        // Ensure storage is not cleaned up
+        assert!(DepositVotesExpiry::<Test, ()>::contains_key(referendum_index));
+        assert!(DepositVotes::<Test, ()>::contains_key(referendum_index, voter));
+        assert!(DepositTallies::<Test, ()>::contains_key(referendum_index));
+    });
+}
